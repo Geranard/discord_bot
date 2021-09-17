@@ -446,15 +446,17 @@ async def shuffle(context):
             original_queue.append(music_queue[index])
 
         music_queue.clear()
-        for index in range(now-1):
-            music_queue[index] = original_queue[index]
+        for index in range(now):
+            print(f"init index -> {index}")
+            music_queue.append(original_queue[index])
 
-        for index in range(now, length-1):
+        for index in range(now, length):
+            print(f"shuffle index -> {index}")
             rand_idx = random.randint(now, length-1)
             while flag_queue[rand_idx]==1:
                 rand_idx = random.randint(now, length-1)
 
-            music_queue[index] = original_queue[rand_idx]
+            music_queue.append(original_queue[rand_idx])
             flag_queue[rand_idx] = 1
 
         flag_is_shuffled = True
@@ -462,9 +464,10 @@ async def shuffle(context):
 
     elif flag_is_shuffled is True:
         music_queue.clear()
-        length = len(music_queue)
+        length = len(original_queue)
         for index in range(length):
-            music_queue[index] = original_queue[index]
+            print(original_queue[index]["title"])
+            music_queue.append(original_queue[index])
 
         original_queue.clear()
         flag_is_shuffled = False
