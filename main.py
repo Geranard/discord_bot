@@ -200,7 +200,7 @@ def title_scraper(url):
 
 # ---------------------------- extract music ---------------------------- #
 async def extract_music(url, context, voice_channel):
-    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
+    global now, play_title, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
     try:
         play_title = title_scraper(url)
 
@@ -327,7 +327,7 @@ async def play(context, *, search):
         search = f"https://www.youtube.com/{search_results[0]}"
 
     tasks_download(search, context, voice_channel)
-    time.sleep(3)
+    time.sleep(5)
     tasks_play(voice_client)
 
     if "?list=" in search:
