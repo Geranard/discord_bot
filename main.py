@@ -5,14 +5,16 @@ import threading
 import asyncio
 from discord.errors import ClientException
 from discord.ext import commands
-from discord.ext.commands.core import check
 from youtube_dl import YoutubeDL
 from youtube_dl.utils import DownloadError
 import requests
-from bs4 import BeautifulSoup
 import urllib
-import re
 import random
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+import time
+import re
 
 # ---------------------------- global var ---------------------------- #
 token = os.environ.get("DISCORD_TOKEN")
@@ -25,6 +27,7 @@ play_title = ""
 flag_is_playing = False
 flag_is_downloading = False
 flag_is_shuffled = False
+flag_is_looping = False
 
 # ---------------------------- init ---------------------------- #
 bot = commands.Bot(command_prefix="-")
@@ -35,7 +38,11 @@ async def on_ready():
     print(f"User {bot.user} has connected to discord.")
 
 # ---------------------------- server info ---------------------------- #
-@bot.command(name="server-info", aliases=["info"])
+@bot.command(
+    name="server-info",
+    aliases=["info"],
+    help="Ngasih informasi tentang server ini"
+)
 async def server(context):
     if context.author==bot.user:
         return
@@ -62,26 +69,15 @@ async def server(context):
     
     await context.send(embed=embed)
 
-# ---------------------------- help command ---------------------------- #
-bot.remove_command("help")
-@bot.command(name="help", aliases=["h"])
-async def help(context):
-    message = "```"
-    message += "               Met dateng ke hjelp page.\n\n"
-    message += "-play [url]/-p      -> untuk masukin queue lagu sama mainin\n"
-    message += "-leave              -> botnya keluar sama ngebersihin queuenya\n"
-    message += "-pause              -> botnya pause aja\n"
-    message += "-resume             -> ngelanjutin lagu yang di pause lah\n"
-    message += "-clear               -> botnya tetep di dalem, cuma queue diapus sama lagunya berenti\n"
-    message += "-queue              -> nunjukin lagu apa aja yang di queue sama yang dimainin\n"
-    message += "Kerapihan kagak sih ini helpnya?\n"
-    message += "```"
-    await context.send(message)
-
 # ---------------------------- now playing command ---------------------------- #
-@bot.command(name="now-playing", aliases=["np"])
+@bot.command(
+    name="now-playing",
+    aliases=["np"],
+    help="Bisa ngasih tau apa yang lagi di play sekarang"
+)
 async def now_playing(context):
-    global now, music_queue
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
+
     voice_channel = context.author.voice.channel
 
     if voice_channel is None:
@@ -96,9 +92,14 @@ async def now_playing(context):
     await context.send(f"Lagi muterin {music_queue[now-1]['title']}")
 
 # ---------------------------- queue command ---------------------------- #
-@bot.command(name="queue", aliases=["q"])
+@bot.command(
+    name="queue",
+    aliases=["q"],
+    help="Ngasih tau queue lagunya"
+)
 async def queue(context):
-    global now, music_queue
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
+
     if context.author.voice.channel!=context.voice_client.channel:
         await context.send("Siapa anda, kagak join maen liat queue orang aja.")
         return
@@ -132,16 +133,17 @@ async def queue(context):
 
 # ---------------------------- task play ---------------------------- #
 def tasks_play(voice_client):
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
+
     async def is_busy():
         global now
-        if now<=len(music_queue) and not voice_client.is_playing():
+        if now<len(music_queue) and not voice_client.is_playing():
             await play_music(voice_client)
 
     def buffer():
         while flag_is_playing == True:
             asyncio.run(is_busy())
-    
-    global flag_is_playing
+
     task = threading.Thread(target=buffer)
     task.daemon = True
 
@@ -151,7 +153,8 @@ def tasks_play(voice_client):
 
 # ---------------------------- play music ---------------------------- #
 async def play_music(voice_client):
-    global now, music_queue
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
+
     voice_client.stop()
     ffmpeg_options = {
         "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
@@ -166,13 +169,14 @@ async def play_music(voice_client):
 
 # ---------------------------- task download ---------------------------- #
 def tasks_download(url, context, voice_channel):
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
+    
     async def is_busy():
         await extract_music(url, context, voice_channel)
 
     def buffer():
         asyncio.run(is_busy())
 
-    global flag_is_downloading
     task = threading.Thread(target=buffer)
     task.daemon = True
 
@@ -180,7 +184,7 @@ def tasks_download(url, context, voice_channel):
         flag_is_downloading = True
         task.start()
 
-# ---------------------------- scrap playlist ---------------------------- #
+# ---------------------------- scrap title ---------------------------- #
 def title_scraper(url):
     response = requests.get(url).text
     soup = BeautifulSoup(response, "html.parser")
@@ -196,7 +200,7 @@ def title_scraper(url):
 
 # ---------------------------- extract music ---------------------------- #
 async def extract_music(url, context, voice_channel):
-    global play_title, music_queue, flag_is_downloading
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
     try:
         play_title = title_scraper(url)
 
@@ -207,47 +211,94 @@ async def extract_music(url, context, voice_channel):
         }
 
         ytdl = YoutubeDL(ytdl_opts)
-        info = ytdl.extract_info(url, download=False)
 
         if "?list=" in url:
-            length = len(info["entries"])
-            for index in range(length):
-                link = info["entries"][index]["url"]
-                title = info["entries"][index]["title"]
-                duration = info["entries"][index]["duration"]
+            path = "C:\Development\chromedriver.exe"
+            user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.50 Safari/537.36"
+
+            opts = webdriver.ChromeOptions()
+            opts.add_argument(f"user-agent={user_agent}")
+            opts.add_argument("--headless")
+            opts.add_argument("log-level=3")
+
+            driver = webdriver.Chrome(executable_path=path, options=opts)
+            driver.get(url)
+
+            soup = BeautifulSoup(driver.page_source, "lxml")
+
+            videos = int(soup.find("span", {"class": "style-scope yt-formatted-string"}).text)
+            scroll = int(videos / 100)
+            if scroll>0:
+                element = driver.find_element_by_tag_name("html")
+                element.send_keys(Keys.END)
+                for _ in range(scroll):
+                    time.sleep(1)
+                    element.send_keys(Keys.END)
+                
+                soup = BeautifulSoup(driver.page_source, "lxml")
+
+            with open(file="tes.html", mode="w", encoding="utf-8") as file:
+                file.write(str(soup.prettify))
+
+            titles = soup.find_all(
+                "a",
+                {
+                    "id": "video-title",
+                    "class": "yt-simple-endpoint style-scope ytd-playlist-video-renderer"
+                }
+            )
+
+            for title in titles:
+                link = re.findall(r'href=\"\/watch\?v=(.{11})', str(title))
+                link = f"https://www.youtube.com/watch?v={link[0]}"
+
+                title = f"{title.text}"
+                title = title.replace("\n", "").replace(" ", "", 10)
+
+                info = ytdl.extract_info(link, download=False)
+
+                if flag_is_downloading == False:
+                    return
+
                 music_dict = {
-                    "url": link,
-                    "title": title,
-                    "duration": duration,
+                    "url": info["url"],
+                    "title": info["title"],
                     "guild": str(context.guild),
                     "channel": voice_channel,
                 }
                 music_queue.append(music_dict)
 
+            driver.close()
+
         else:
-            link = info["url"]
-            title = info["title"]
-            duration = info["duration"]
+            info = ytdl.extract_info(url, download=False)
+
+            if flag_is_downloading == False:
+                return
+            
             music_dict = {
-                "url": link,
-                "title": title,
-                "duration": duration,
+                "url": info["url"],
+                "title": info["title"],
                 "guild": str(context.guild),
                 "channel": voice_channel,
             }
             music_queue.append(music_dict)
-        
+
         print(f"EXTRACT MUSIC FUNCTION TRIGGERED SAFELY")
-    
+
     except DownloadError:
         return
 
     flag_is_downloading = False
 
 # ---------------------------- play command ---------------------------- #
-@bot.command(name="play", aliases=["p"])
+@bot.command(
+    name="play",
+    aliases=["p"],
+    help="Kalo mau play lagu dan masukin ke queue"
+)
 async def play(context, *, search):
-    global music_queue, play_title
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
     try:
         voice_channel = str(context.author.voice.channel)
         voice = discord.utils.get(context.guild.voice_channels, name=voice_channel)
@@ -262,7 +313,7 @@ async def play(context, *, search):
     
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
 
-    if not ".com" in search and not ".org" in search:
+    if not ".com" in search and not ".org" in search and not "https://" in search:
         query_string = urllib.parse.urlencode({
             'search_query': search
         })
@@ -275,7 +326,6 @@ async def play(context, *, search):
         search_results = [result for result in search_results if len(result)==19]
         search = f"https://www.youtube.com/{search_results[0]}"
 
-    tasks_play(voice_client)
     tasks_download(search, context, voice_channel)
     time.sleep(3)
     tasks_play(voice_client)
@@ -288,9 +338,13 @@ async def play(context, *, search):
     print(f"PLAY COMMAND FUNCTION TRIGGERED SAFELY")
 
 # ---------------------------- next command ---------------------------- #
-@bot.command(name="next", aliases=["n", "skip"])
+@bot.command(
+    name="next",
+    aliases=["n", "skip"],
+    help="Kalo ga suka lagunya, bisa skip atau next aja"
+)
 async def next(context):
-    global now, music_queue, flag_is_playing
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
     voice_channel = context.author.voice.channel
     
@@ -317,9 +371,13 @@ async def next(context):
     tasks_play(voice_client)
 
 # ---------------------------- previous command ---------------------------- #
-@bot.command(name="prev", aliases=["back"])
+@bot.command(
+    name="prev",
+    aliases=["back"],
+    help="Kalo mau balik ke lagu sebelumnya"
+)
 async def prev(context):
-    global now, music_queue, flag_is_playing
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
     voice_channel = context.author.voice.channel
 
@@ -345,9 +403,13 @@ async def prev(context):
     tasks_play(voice_client)
 
 # ---------------------------- jump command ---------------------------- #
-@bot.command(name="jump", aliases=["j"])
+@bot.command(
+    name="jump",
+    aliases=["j"],
+    help="Mau loncat ke urutan lagu tertentu, masukin aja angkanya"
+)
 async def jump(context, index):
-    global now, music_queue, flag_is_playing
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
     voice_channel = context.author.voice.channel
 
@@ -366,23 +428,28 @@ async def jump(context, index):
     tasks_play(voice_client)
 
 # ---------------------------- shuffle command ---------------------------- #
-@bot.command(name="shuffle", aliases=["random", "randomize"])
+@bot.command(
+    name="shuffle",
+    aliases=["random", "randomize"],
+    help="Ngacak-ngacak queue, tapi masih ccd ini commandnya"
+)
 async def shuffle(context):
-    global now, original_queue, flag_queue, flag_is_shuffled
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
     if context.author.voice.channel!=context.voice_client.channel:
         return await context.send("Anda saja tidak join disini, mau jump jump aja.")
 
     if flag_is_shuffled is False:
         length = len(music_queue)
-        original_queue = []
         original_queue.clear()
+
         for index in range(length):
             original_queue.append(music_queue[index])
-        
-        for index in range(now):
+
+        music_queue.clear()
+        for index in range(now-1):
             music_queue[index] = original_queue[index]
 
-        for index in range(now, length):
+        for index in range(now, length-1):
             rand_idx = random.randint(now, length-1)
             while flag_queue[rand_idx]==1:
                 rand_idx = random.randint(now, length-1)
@@ -394,6 +461,7 @@ async def shuffle(context):
         await context.send("Queue tergocek.")
 
     elif flag_is_shuffled is True:
+        music_queue.clear()
         length = len(music_queue)
         for index in range(length):
             music_queue[index] = original_queue[index]
@@ -403,7 +471,10 @@ async def shuffle(context):
         await context.send("Sudah kembali ke semula.")
 
 # ---------------------------- loop command ---------------------------- #
-@bot.command(name="loop")
+@bot.command(
+    name="loop",
+    help="Buat ngemuter berkali-kali"
+)
 async def loop(context):
     global counter, now
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
@@ -414,7 +485,10 @@ async def loop(context):
     # lanjut lagi entar
 
 # ---------------------------- pause command ---------------------------- #
-@bot.command(name="pause", aliases=[""])
+@bot.command(
+    name="pause",
+    help="Kalo lagi jalan lagunya, baru bisa di pause"
+)
 async def pause(context):
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
     voice_channel = context.author.voice.channel
@@ -431,7 +505,10 @@ async def pause(context):
         await context.send("Pause apa gan?")
 
 # ---------------------------- resume command ---------------------------- #
-@bot.command(name="resume", alisases=[""])
+@bot.command(
+    name="resume",
+    help="Kalo udah di pause, baru bisa di resume"
+)
 async def resume(context):
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
     voice_channel = context.author.voice.channel
@@ -448,7 +525,10 @@ async def resume(context):
         await context.send("Hah? Resume apa nih?")
 
 # ---------------------------- stop command ---------------------------- #
-@bot.command(name="stop", alisases=[""])
+@bot.command(
+    name="stop",
+    help="Stop lagunya aja gitu"
+)
 async def stop(context):
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
     voice_channel = context.author.voice.channel
@@ -462,7 +542,11 @@ async def stop(context):
     await context.send("Fungsi stop masih di develop. Sabar ya.")
 
 # ---------------------------- remove command ---------------------------- #
-@bot.command(name="remove", aliases=["r"])
+@bot.command(
+    name="remove",
+    aliases=["r"],
+    help="Ngapus lagu dari queuenya, masukin aja indexnya dari queue"
+)
 async def remove(context, index):
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
     voice_channel = context.author.voice.channel
@@ -489,9 +573,13 @@ async def remove(context, index):
         await context.send(f"Ada yang ngaco ini. Antara ga ada indexnya atau mabok.")
 
 # ---------------------------- clear command ---------------------------- #
-@bot.command(name="clear", aliases=["c", "purge"])
+@bot.command(
+    name="clear",
+    aliases=["c", "purge"],
+    help="Ngapus seluruh queuenya trus berenti mainin lagunya"
+)
 async def clear(context):
-    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
     voice_channel = context.author.voice.channel
 
@@ -505,16 +593,21 @@ async def clear(context):
     flag_is_playing = False
     flag_is_downloading = False
     flag_is_shuffled = False
+    flag_is_looping = False
+    flag_queue = [0]*9999
     now = 0
     music_queue.clear()
-    flag_queue = [0]*9999
     time.sleep(1)
     await context.send("Dah di clear.")
 
 # ---------------------------- leave command ---------------------------- #
-@bot.command(name="leave", aliases=["dc"])
+@bot.command(
+    name="leave",
+    aliases=["dc"],
+    help="Ini mah keluarin bot aja"
+)
 async def leave(context):
-    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
     if context.author.voice.channel!=context.voice_client.channel:
         return await context.send("Anda saja tidak join disini, mau main depak bot orang aja.")
@@ -524,6 +617,7 @@ async def leave(context):
     flag_is_playing = False
     flag_is_downloading = False
     flag_is_shuffled = False
+    flag_is_looping = False
     now = 0
     music_queue.clear()
     time.sleep(1)
