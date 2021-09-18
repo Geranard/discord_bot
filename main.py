@@ -31,6 +31,7 @@ flag_is_looping = False
 
 # ---------------------------- init ---------------------------- #
 bot = commands.Bot(command_prefix="-")
+bot.remove_command("help")
 
 # ---------------------------- status ---------------------------- #
 @bot.event
@@ -58,7 +59,7 @@ async def server(context):
     embed = discord.Embed(
         title=name + " Server Information",
         description=description,
-        color=discord.Color.blue()
+        color=discord.Color.dark_gold()
     )
 
     embed.set_thumbnail(url=icon)
@@ -69,11 +70,37 @@ async def server(context):
 
     await context.send(embed=embed)
 
+# ---------------------------- help command ---------------------------- #
+@bot.command(
+    name="help",
+    aliases=["h"]
+)
+async def help(context):
+    embed = discord.Embed(
+        title="Help",
+        description="Ini kolom untuk command command yang bisa dipakai",
+        color=discord.Color.dark_red()
+    )
+
+    embed.add_field(name="-play 'url' (-p 'url')", value="Masukin url ke queue dan bakal di puter nanti")
+    embed.add_field(name="-next (-skip, -n)", value="Loncat satu lagu ke depan")
+    embed.add_field(name="-prev (-back, -b)", value="Loncat satu lagu ke belakang")
+    embed.add_field(name="-remove 'index' (-r 'index')", value="Ngapus salah satu lagu sesuai indexnya")
+    embed.add_field(name="-shuffle (-random, -randomize)", value="Mengacak playlist yang ada dan terdownload")
+    embed.add_field(name="-pause", value="Pause lagunya")
+    embed.add_field(name="-resume", value="Resume lagunya")
+    embed.add_field(name="-clear (-c, -purge)", value="Untuk clear playlist sekarang")
+    embed.add_field(name="-jump 'index' (-j 'index')", value="Loncat ke lagu tertentu")
+    embed.add_field(name="-leave (-dc, -disconnect)", value="Ngeluarin botnya")
+    embed.add_field(name="-loop (-l)", value="Masih di develop, jangan dipake dulu ya pantek")
+    embed.add_field(name="-stop (-s)", value="Masih di develop, jangan dipake dulu ya pantek")
+
+    await context.send(embed=embed)
+
 # ---------------------------- now playing command ---------------------------- #
 @bot.command(
     name="now-playing",
-    aliases=["np"],
-    help="Bisa ngasih tau apa yang lagi di play sekarang"
+    aliases=["np"]
 )
 async def now_playing(context):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
@@ -105,8 +132,7 @@ async def now_playing(context):
 # ---------------------------- queue command ---------------------------- #
 @bot.command(
     name="queue",
-    aliases=["q"],
-    help="Ngasih tau queue lagunya"
+    aliases=["q"]
 )
 async def queue(context):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
@@ -359,8 +385,7 @@ async def extract_music(url, context, voice_channel):
 # ---------------------------- play command ---------------------------- #
 @bot.command(
     name="play",
-    aliases=["p"],
-    help="Kalo mau play lagu dan masukin ke queue"
+    aliases=["p"]
 )
 async def play(context, *, search):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
@@ -405,8 +430,7 @@ async def play(context, *, search):
 # ---------------------------- next command ---------------------------- #
 @bot.command(
     name="next",
-    aliases=["n", "skip"],
-    help="Kalo ga suka lagunya, bisa skip atau next aja"
+    aliases=["n", "skip"]
 )
 async def next(context):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
@@ -438,8 +462,7 @@ async def next(context):
 # ---------------------------- previous command ---------------------------- #
 @bot.command(
     name="prev",
-    aliases=["back"],
-    help="Kalo mau balik ke lagu sebelumnya"
+    aliases=["back", "b"]
 )
 async def prev(context):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
@@ -470,8 +493,7 @@ async def prev(context):
 # ---------------------------- jump command ---------------------------- #
 @bot.command(
     name="jump",
-    aliases=["j"],
-    help="Mau loncat ke urutan lagu tertentu, masukin aja angkanya"
+    aliases=["j"]
 )
 async def jump(context, index):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
@@ -495,8 +517,7 @@ async def jump(context, index):
 # ---------------------------- shuffle command ---------------------------- #
 @bot.command(
     name="shuffle",
-    aliases=["random", "randomize"],
-    help="Ngacak-ngacak queue, tapi masih ccd ini commandnya"
+    aliases=["random", "randomize"]
 )
 async def shuffle(context):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
@@ -552,7 +573,7 @@ async def shuffle(context):
 # ---------------------------- loop command ---------------------------- #
 @bot.command(
     name="loop",
-    help="Buat ngemuter berkali-kali"
+    aliases=["l"]
 )
 async def loop(context):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
@@ -571,8 +592,7 @@ async def loop(context):
 
 # ---------------------------- pause command ---------------------------- #
 @bot.command(
-    name="pause",
-    help="Kalo lagi jalan lagunya, baru bisa di pause"
+    name="pause"
 )
 async def pause(context):
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
@@ -593,8 +613,7 @@ async def pause(context):
 
 # ---------------------------- resume command ---------------------------- #
 @bot.command(
-    name="resume",
-    help="Kalo udah di pause, baru bisa di resume"
+    name="resume"
 )
 async def resume(context):
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
@@ -615,8 +634,7 @@ async def resume(context):
 
 # ---------------------------- stop command ---------------------------- #
 @bot.command(
-    name="stop",
-    help="Stop lagunya aja gitu"
+    name="stop"
 )
 async def stop(context):
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
@@ -633,8 +651,7 @@ async def stop(context):
 # ---------------------------- remove command ---------------------------- #
 @bot.command(
     name="remove",
-    aliases=["r"],
-    help="Ngapus lagu dari queuenya, masukin aja indexnya dari queue"
+    aliases=["r"]
 )
 async def remove(context, index):
     voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
@@ -665,8 +682,7 @@ async def remove(context, index):
 # ---------------------------- clear command ---------------------------- #
 @bot.command(
     name="clear",
-    aliases=["c", "purge"],
-    help="Ngapus seluruh queuenya trus berenti mainin lagunya"
+    aliases=["c", "purge"]
 )
 async def clear(context):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
@@ -693,8 +709,7 @@ async def clear(context):
 # ---------------------------- leave command ---------------------------- #
 @bot.command(
     name="leave",
-    aliases=["dc"],
-    help="Ini mah keluarin bot aja"
+    aliases=["dc", "disconnect"]
 )
 async def leave(context):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
