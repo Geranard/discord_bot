@@ -46,7 +46,7 @@ async def on_ready():
 async def server(context):
     if context.author==bot.user:
         return
-    
+
     name = str(context.guild.name)
     description = str(context.guild.description)
     owner = str(context.guild.owner)
@@ -60,13 +60,13 @@ async def server(context):
         description=description,
         color=discord.Color.blue()
     )
-    
+
     embed.set_thumbnail(url=icon)
     embed.add_field(name="Owner", value=owner, inline=True)
     embed.add_field(name="Server ID", value=id, inline=True)
     embed.add_field(name="Region", value=region, inline=True)
     embed.add_field(name="Member Count", value=member_count, inline=True)
-    
+
     await context.send(embed=embed)
 
 # ---------------------------- now playing command ---------------------------- #
@@ -85,11 +85,22 @@ async def now_playing(context):
 
     if context.author.voice.channel!=context.voice_client.channel:
         return await context.send("Ga, ga ada, pegi sana liat liat aja.")
-        
+
     if len(music_queue)<=0:
         return await context.send("Yo ndak tau, kok tanya saya?")
-    
-    await context.send(f"Lagi muterin {music_queue[now-1]['title']}")
+
+    embed = discord.Embed(
+        title="Yang lagi diputar",
+        description="Ini lagu yang lagi diputar",
+        color=discord.Color.blurple()
+    )
+
+    embed.add_field(
+        name="Now Playing",
+        value=f"{music_queue[now-1]['title']}[{music_queue[now-1]['source']}]"
+    )
+
+    await context.send(embed=embed)
 
 # ---------------------------- queue command ---------------------------- #
 @bot.command(
@@ -101,35 +112,87 @@ async def queue(context):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
 
     if context.author.voice.channel!=context.voice_client.channel:
-        await context.send("Siapa anda, kagak join maen liat queue orang aja.")
-        return
+        return await context.send("Siapa anda, kagak join maen liat queue orang aja.")
 
     if len(music_queue)<=0:
         message = "Ga ada musiknya ini."
-    
+        await context.send(message)
+
     else:
-        message = "```"
-        from_ = 0
-        to_ = len(music_queue)
+        length = len(music_queue)
+        len_page = int(length/10)
+        if length%10 != 0:
+            len_page += 1
+        print(f"len_page -> {len_page}")
 
-        if now>=10:
-            from_ = now-10
-        
-        if now+10<=len(music_queue):
-            to_ = now+10
-        
-        for idx in range(from_, to_):
-            if idx == now-1:
-                message += " -> Now Playing\n"
-                message += f"{idx+1}) {music_queue[idx]['title']}\n"
-                message += " -> Now Playing\n"
+        playing = ""
+        message = ""
+        pages = []
 
-            else:
-                message += f"{idx+1}) {music_queue[idx]['title']}\n"
+        for lp in range(len_page):
+            embed = discord.Embed(
+                title="Antrian musik",
+                description="Ini lagu yang bakal di play",
+                color=discord.Color.blurple()
+            )
 
-        message += "```"
-    
-    await context.send(message)
+            until = lp * 10 + 10
+            print(f"until -> {until}")
+
+            for idx in range(until-10, until):
+                try:
+                    if idx == now-1:
+                        playing = f"{idx+1}) Yang lagi diputer"
+                    else:
+                        playing = f"{idx+1}) Diantriin"
+
+                    message = f"Lagu -> {[music_queue[idx]['title']]}({(music_queue[idx]['source'])})"
+
+                    embed.add_field(name=playing, value=message, inline=False)
+
+                    # print(f"index -> {idx}")
+
+                except IndexError:
+                    pass
+
+            pages.append(embed)
+
+        page = int((now-1) / 10)
+        left = "⏪"
+        right = "⏩"
+        while True:
+            msg = await context.send(embed=pages[page])
+            l = page != 0
+            r = page != len(pages) - 1
+            if l:
+                await msg.add_reaction(left)
+            if r:
+                await msg.add_reaction(right)
+
+            def predicate(message, l, r):
+                def check(reaction, user):
+
+                    if reaction.message.id!=message.id or user==bot.user:
+                        return False
+                    if l and reaction.emoji=="⏪":
+                        return True
+                    if r and reaction.emoji=="⏩":
+                        return True
+                    return False
+
+                return check
+
+            react = await bot.wait_for("reaction_add", check=predicate(msg, l, r))
+            # print(type(react[0]))
+            # print(str(react[0]))
+            if str(react[0]) == left:
+                page -= 1
+            elif str(react[0]) == right:
+                page += 1
+
+            # print(page)
+
+            await msg.delete()
 
 # ---------------------------- task play ---------------------------- #
 def tasks_play(voice_client):
@@ -139,6 +202,8 @@ def tasks_play(voice_client):
         global now
         if now<len(music_queue) and not voice_client.is_playing():
             await play_music(voice_client)
+            time.sleep(1)
+            print("Playing music")
 
     def buffer():
         while flag_is_playing == True:
@@ -165,7 +230,8 @@ async def play_music(voice_client):
         source = await discord.FFmpegOpusAudio.from_probe(now_playing, **ffmpeg_options)
         voice_client.play(source)
         flag_queue[now] = 1
-        now += 1
+        if flag_is_looping is False:
+            now += 1
 
 # ---------------------------- task download ---------------------------- #
 def tasks_download(url, context, voice_channel):
@@ -237,9 +303,6 @@ async def extract_music(url, context, voice_channel):
                 
                 soup = BeautifulSoup(driver.page_source, "lxml")
 
-            with open(file="tes.html", mode="w", encoding="utf-8") as file:
-                file.write(str(soup.prettify))
-
             titles = soup.find_all(
                 "a",
                 {
@@ -263,6 +326,7 @@ async def extract_music(url, context, voice_channel):
                 music_dict = {
                     "url": info["url"],
                     "title": info["title"],
+                    "source": link,
                     "guild": str(context.guild),
                     "channel": voice_channel,
                 }
@@ -279,6 +343,7 @@ async def extract_music(url, context, voice_channel):
             music_dict = {
                 "url": info["url"],
                 "title": info["title"],
+                "source": url,
                 "guild": str(context.guild),
                 "channel": voice_channel,
             }
@@ -315,11 +380,11 @@ async def play(context, *, search):
 
     if not ".com" in search and not ".org" in search and not "https://" in search:
         query_string = urllib.parse.urlencode({
-            'search_query': search
+            "search_query": search
         })
 
         html_content = urllib.request.urlopen(
-            'https://www.youtube.com/results?search_query=' + query_string
+            "https://www.youtube.com/results?search_query=" + query_string
         )
 
         search_results = re.findall(r'watch\?v=\w+', html_content.read().decode())
@@ -438,6 +503,8 @@ async def shuffle(context):
     if context.author.voice.channel!=context.voice_client.channel:
         return await context.send("Anda saja tidak join disini, mau jump jump aja.")
 
+    title_playing = music_queue[now-1]["title"]
+
     if flag_is_shuffled is False:
         length = len(music_queue)
         original_queue.clear()
@@ -455,11 +522,12 @@ async def shuffle(context):
             rand_idx = random.randint(now, length-1)
             while flag_queue[rand_idx]==1:
                 rand_idx = random.randint(now, length-1)
-
+            
             music_queue.append(original_queue[rand_idx])
             flag_queue[rand_idx] = 1
 
         flag_is_shuffled = True
+        flag_is_playing = True
         await context.send("Queue tergocek.")
 
     elif flag_is_shuffled is True:
@@ -471,7 +539,15 @@ async def shuffle(context):
 
         original_queue.clear()
         flag_is_shuffled = False
+        flag_is_playing = True
         await context.send("Sudah kembali ke semula.")
+    
+    idx = 0
+    for music in music_queue:
+        idx += 1
+        if title_playing==music["title"]:
+            now = idx
+            break
 
 # ---------------------------- loop command ---------------------------- #
 @bot.command(
@@ -479,13 +555,19 @@ async def shuffle(context):
     help="Buat ngemuter berkali-kali"
 )
 async def loop(context):
-    global counter, now
-    voice_client = discord.utils.get(bot.voice_clients, guild=context.guild)
+    global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
     if context.author.voice.channel!=context.voice_client.channel:
-        await context.send("Anda saja tidak join disini, mau muter aja.")
-        return
+        return await context.send("Anda saja tidak join disini, mau muter aja.")
 
-    # lanjut lagi entar
+    if flag_is_looping is False:
+        flag_is_looping = True
+        await context.send(f"Terngiang-ngiang dengan lagu {music_queue[now-1]['title']}.")
+
+    elif flag_is_looping is True:
+        flag_is_looping = False
+        await context.send(f"Oke deh, sudah tidak berputar di {music_queue[now]['title']}.")
+
+    flag_is_playing = True
 
 # ---------------------------- pause command ---------------------------- #
 @bot.command(
@@ -507,6 +589,8 @@ async def pause(context):
     else:
         await context.send("Pause apa gan?")
 
+    flag_is_playing = True
+
 # ---------------------------- resume command ---------------------------- #
 @bot.command(
     name="resume",
@@ -526,6 +610,8 @@ async def resume(context):
         voice_client.resume()
     else:
         await context.send("Hah? Resume apa nih?")
+    
+    flag_is_playing = True
 
 # ---------------------------- stop command ---------------------------- #
 @bot.command(
@@ -571,6 +657,7 @@ async def remove(context, index):
             play_music(voice_client)
         
         await context.send(f"Ngeremove {music_queue[index-1]['title']}.")
+        flag_is_playing = True
 
     except IndexError:
         await context.send(f"Ada yang ngaco ini. Antara ga ada indexnya atau mabok.")
