@@ -124,7 +124,7 @@ async def now_playing(context):
 
     embed.add_field(
         name="Now Playing",
-        value=f"{music_queue[now-1]['title']}[{music_queue[now-1]['source']}]"
+        value=f"{music_queue[now-1]['title']}({music_queue[now-1]['source']})"
     )
 
     await context.send(embed=embed)
@@ -225,21 +225,21 @@ def tasks_play(voice_client):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
 
     async def is_busy():
-        global now
         if now<len(music_queue) and not voice_client.is_playing():
-            await play_music(voice_client)
-            time.sleep(1)
             print("Playing music")
+            await play_music(voice_client)
+
+        time.sleep(1)
 
     def buffer():
-        while flag_is_playing == True:
+        while flag_is_playing is True:
             asyncio.run(is_busy())
-
-    task = threading.Thread(target=buffer)
-    task.daemon = True
+            time.sleep(1)
 
     if flag_is_playing is False:
         flag_is_playing = True
+        task = threading.Thread(target=buffer)
+        task.daemon = True
         task.start()
 
 # ---------------------------- play music ---------------------------- #
@@ -251,13 +251,14 @@ async def play_music(voice_client):
         "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
         "options": "-vn",
     }
-    if now<len(music_queue):
-        now_playing = music_queue[now]["url"]
-        source = await discord.FFmpegOpusAudio.from_probe(now_playing, **ffmpeg_options)
-        voice_client.play(source)
-        flag_queue[now] = 1
-        if flag_is_looping is False:
-            now += 1
+
+    now_playing = music_queue[now]["url"]
+    source = await discord.FFmpegOpusAudio.from_probe(now_playing, **ffmpeg_options)
+    voice_client.play(source)
+    flag_queue[now] = 1
+
+    if flag_is_looping is False:
+        now += 1
 
 # ---------------------------- task download ---------------------------- #
 def tasks_download(url, context, voice_channel):
@@ -416,8 +417,11 @@ async def play(context, *, search):
         search_results = [result for result in search_results if len(result)==19]
         search = f"https://www.youtube.com/{search_results[0]}"
 
+    if "open.spotify.com" in search:
+        pass
+
     tasks_download(search, context, voice_channel)
-    time.sleep(5)
+    time.sleep(2)
     tasks_play(voice_client)
 
     if "?list=" in search:
@@ -517,7 +521,7 @@ async def jump(context, index):
 # ---------------------------- shuffle command ---------------------------- #
 @bot.command(
     name="shuffle",
-    aliases=["random", "randomize"]
+    aliases=["random", "randomize", "rand"]
 )
 async def shuffle(context):
     global now, flag_is_playing, flag_is_downloading, flag_is_shuffled, music_queue, flag_queue, flag_is_looping
